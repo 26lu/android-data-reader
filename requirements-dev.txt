@@ -1,0 +1,9 @@
+# 生产环境依赖
+-r requirements.txt
+
+# 开发环境依赖
+pytest>=7.0.0
+pytest-qt>=4.0.0
+pytest-cov>=4.0.0
+flake8>=5.0.0
+black>=22.0.0
