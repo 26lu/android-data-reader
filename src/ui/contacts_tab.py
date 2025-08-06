@@ -1,7 +1,18 @@
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QPushButton, 
-                             QTableWidget, QTableWidgetItem, QHBoxLayout,
-                             QLineEdit, QFileDialog, QMessageBox, QHeaderView)
+from PyQt5.QtWidgets import (
+    QWidget, 
+    QVBoxLayout, 
+    QPushButton, 
+    QTableWidget, 
+    QTableWidgetItem, 
+    QHBoxLayout,
+    QLineEdit, 
+    QFileDialog, 
+    QMessageBox, 
+    QHeaderView
+)
 from PyQt5.QtCore import Qt
+import logging
+
 from ..core.device_manager import DeviceManager
 from ..core.contacts_reader import ContactsReader, Contact
 
@@ -11,6 +22,7 @@ class ContactsTab(QWidget):
         self.device_manager = device_manager
         self.current_device = None
         self.contacts_reader = ContactsReader(device_manager)
+        self.logger = logging.getLogger('ContactsTab')
         self.init_ui()
     
     def on_device_connected(self, device_id):
@@ -62,16 +74,34 @@ class ContactsTab(QWidget):
     def load_contacts(self):
         """加载联系人数据"""
         if not self.current_device:
+            QMessageBox.warning(self, '设备未连接', '请先连接Android设备')
             return
             
-        contacts = self.contacts_reader.get_all_contacts(self.current_device)
-        self.contacts_table.setRowCount(len(contacts))
+        print(f"开始加载设备 {self.current_device} 的联系人数据")
         
-        for row, contact in enumerate(contacts):
-            self.contacts_table.setItem(row, 0, QTableWidgetItem(contact.name))
-            self.contacts_table.setItem(row, 1, QTableWidgetItem(', '.join(contact.phone_numbers)))
-            self.contacts_table.setItem(row, 2, QTableWidgetItem(', '.join(contact.email_addresses)))
-            self.contacts_table.setItem(row, 3, QTableWidgetItem(contact.group))
+        try:
+            contacts = self.contacts_reader.get_all_contacts(self.current_device)
+            print(f"从联系人读取器获取到 {len(contacts)} 个联系人")
+            self.contacts_table.setRowCount(len(contacts))
+            
+            print(f"准备在表格中显示 {len(contacts)} 个联系人")
+            
+            for row, contact in enumerate(contacts):
+                print(f"显示联系人 {row+1}: 姓名='{contact.name}', 电话={contact.phone}, 邮箱={contact.email}, 分组='{contact.group}'")
+                
+                self.contacts_table.setItem(row, 0, QTableWidgetItem(contact.name))
+                # 确保电话号码和邮箱正确显示
+                phone_text = ', '.join(contact.phone) if isinstance(contact.phone, list) else str(contact.phone)
+                email_text = ', '.join(contact.email) if isinstance(contact.email, list) else str(contact.email)
+                self.contacts_table.setItem(row, 1, QTableWidgetItem(phone_text))
+                self.contacts_table.setItem(row, 2, QTableWidgetItem(email_text))
+                self.contacts_table.setItem(row, 3, QTableWidgetItem(contact.group))
+                
+            print("联系人数据加载完成")
+            
+        except Exception as e:
+            print(f"加载联系人时出错: {str(e)}")
+            QMessageBox.critical(self, '错误', f'加载联系人失败: {str(e)}')
             
     def filter_contacts(self, text):
         """过滤联系人"""

@@ -7,3 +7,4 @@ pytest-qt>=4.0.0
 pytest-cov>=4.0.0
 flake8>=5.0.0
 black>=22.0.0
+pyinstaller>=5.0.0

@@ -9,8 +9,9 @@
 import subprocess
 import re
 import os
+import sys
 import logging
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from .logger import default_logger
 
 class DeviceManager:
@@ -21,28 +22,27 @@ class DeviceManager:
         初始化设备管理器
         
         Args:
-            adb_path (str): ADB可执行文件路径，默认为None
+            adb_path: ADB可执行文件路径，如果为None则自动查找
         """
         self.logger = default_logger
         self.logger.info("初始化设备管理器")
         
-        # 设置ADB路径
         if adb_path:
             self.adb_path = adb_path
         else:
-            # 尝试使用系统ADB或项目自带的ADB
             self.adb_path = self._find_adb()
-        
+            
         self.logger.info(f"使用ADB路径: {self.adb_path}")
-    
+
     def _find_adb(self) -> str:
-        """
-        查找ADB可执行文件
+        """查找ADB可执行文件路径
         
         Returns:
-            str: ADB可执行文件路径
+            ADB可执行文件路径
         """
-        # 首先尝试系统PATH中的ADB
+        self.logger.debug("正在查找ADB路径")
+        
+        # 首先尝试使用系统ADB
         try:
             result = subprocess.run(['adb', 'version'], 
                                   capture_output=True, text=True, timeout=5)
@@ -50,31 +50,76 @@ class DeviceManager:
                 self.logger.info("使用系统ADB")
                 return 'adb'
         except (subprocess.SubprocessError, FileNotFoundError):
+            self.logger.debug("系统ADB不可用")
+            pass
+        except subprocess.TimeoutExpired:
+            self.logger.warning("系统ADB版本检查超时")
             pass
         
         # 尝试使用项目自带的ADB
         platform_dir = 'platform-tools'
-        if os.name == 'nt':  # Windows
+        if sys.platform == 'win32':
             adb_executable = os.path.join(platform_dir, 'adb.exe')
-        else:  # macOS/Linux
+        else:
             adb_executable = os.path.join(platform_dir, 'adb')
-        
+            
         if os.path.exists(adb_executable):
             self.logger.info(f"使用项目自带ADB: {adb_executable}")
             return adb_executable
+            
+        self.logger.error("未找到可用的ADB")
+        raise FileNotFoundError("未找到可用的ADB可执行文件")
         
-        self.logger.warning("未找到ADB可执行文件")
-        return 'adb'  # 最后尝试系统命令
-    
-    def get_devices(self) -> List[str]:
+    def _run_adb_command(self, args: List[str], device_id: str, timeout: int = 30) -> Tuple[bool, str]:
+        """执行ADB命令
+        
+        Args:
+            args: ADB命令参数列表
+            device_id: 设备ID
+            timeout: 超时时间（秒）
+            
+        Returns:
+            (成功标志, 输出内容)
         """
-        获取连接的设备列表
+        # 构建完整的ADB命令，包含设备ID
+        full_args = ['-s', device_id] + args
+        self.logger.debug(f"执行ADB命令: {self.adb_path} {' '.join(full_args)}")
+        try:
+            result = subprocess.run(
+                [self.adb_path] + full_args,
+                capture_output=True, 
+                text=True, 
+                timeout=timeout,
+                encoding='utf-8'
+            )
+            
+            self.logger.debug(f"ADB命令返回码: {result.returncode}")
+            self.logger.debug(f"ADB命令stdout长度: {len(result.stdout)}")
+            self.logger.debug(f"ADB命令stderr长度: {len(result.stderr)}")
+            
+            if result.returncode == 0:
+                return True, result.stdout.strip()
+            else:
+                error_msg = result.stderr.strip()
+                self.logger.warning(f"ADB命令执行失败: {error_msg}")
+                return False, error_msg
+                
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"ADB命令执行超时: {self.adb_path} {' '.join(full_args)}")
+            return False, "命令执行超时"
+        except Exception as e:
+            self.logger.error(f"执行ADB命令时出错: {str(e)}")
+            return False, f"执行命令时出错: {str(e)}"
+        
+    def get_devices(self) -> List[str]:
+        """获取连接的设备列表
         
         Returns:
-            List[str]: 设备序列号列表
+            设备ID列表
         """
+        self.logger.info("获取设备列表")
         try:
-            self.logger.info("获取设备列表")
+            self.logger.debug(f"执行命令: {self.adb_path} devices")
             result = subprocess.run([self.adb_path, 'devices'], 
                                   capture_output=True, text=True, timeout=10)
             
@@ -84,111 +129,176 @@ class DeviceManager:
             
             devices = []
             lines = result.stdout.strip().split('\n')
-            
             # 跳过第一行标题
             for line in lines[1:]:
-                if line and '\t' in line:
-                    device_id, status = line.split('\t')
-                    if status == 'device':
+                if line.strip() and not line.startswith('*'):
+                    device_id = line.split()[0]
+                    if device_id != 'List':
                         devices.append(device_id)
             
             self.logger.info(f"找到 {len(devices)} 个连接设备")
+            self.logger.debug(f"设备列表: {devices}")
+            
+            # 如果没有找到设备，记录更多信息帮助诊断
+            if not devices:
+                self.logger.info("未找到设备，可能的原因：")
+                self.logger.info("1. 未连接Android设备")
+                self.logger.info("2. 未在设备上启用USB调试")
+                self.logger.info("3. 未在设备上授权调试权限")
+                self.logger.info("4. USB线缆仅支持充电不支持数据传输")
+                self.logger.info("5. 设备驱动未正确安装")
+                self.logger.info("6. USB连接模式不正确（应选择文件传输/MTP模式）")
+                self.logger.info("故障排除建议：")
+                self.logger.info("- 确保已在手机上启用'开发者选项'和'USB调试'")
+                self.logger.info("- 重新连接USB线，确认手机上弹出的授权提示")
+                self.logger.info("- 尝试更换USB线缆和端口")
+                self.logger.info("- 安装手机品牌的官方USB驱动程序")
+            
             return devices
             
         except subprocess.TimeoutExpired:
             self.logger.error("获取设备列表超时")
             return []
+        except FileNotFoundError:
+            self.logger.error(f"ADB可执行文件未找到: {self.adb_path}")
+            return []
+        except subprocess.SubprocessError as e:
+            self.logger.error(f"执行ADB命令时出错: {str(e)}")
+            return []
         except Exception as e:
-            self.logger.error(f"获取设备列表时出错: {e}")
+            self.logger.error(f"获取设备列表时出错: {str(e)}")
             return []
     
-    def get_device_info(self, device_id: str) -> Dict[str, str]:
+    def detect_mtp_devices(self) -> List[str]:
+        """检测MTP模式下的设备（预留功能）
+        
+        Returns:
+            MTP设备列表
         """
-        获取设备信息
+        self.logger.info("检测MTP设备（预留功能）")
+        # TODO: 实现MTP设备检测
+        # 这将允许在不启用USB调试的情况下检测设备
+        # 但功能会受到限制，只能访问媒体文件
+        return []
+    
+    def get_device_info(self, device_id: str) -> Dict[str, str]:
+        """获取设备信息
         
         Args:
-            device_id (str): 设备序列号
+            device_id: 设备ID
             
         Returns:
-            Dict[str, str]: 设备信息字典
+            设备信息字典
         """
+        self.logger.info(f"获取设备信息: {device_id}")
         info = {}
+        
         try:
-            self.logger.info(f"获取设备 {device_id} 的信息")
-            
-            # 检查设备ID是否有效
-            if not device_id:
-                self.logger.warning("设备ID为空")
-                return info
-            
             # 获取设备型号
+            self.logger.debug(f"获取设备型号: {device_id}")
             model_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'getprop', 'ro.product.model'],
                                         capture_output=True, text=True, timeout=10)
             if model_result.returncode == 0:
-                info['型号'] = model_result.stdout.strip()
-            
+                info['model'] = model_result.stdout.strip()
+            else:
+                self.logger.warning(f"获取设备型号失败: {model_result.stderr}")
+                
             # 获取Android版本
+            self.logger.debug(f"获取Android版本: {device_id}")
             version_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'getprop', 'ro.build.version.release'],
                                           capture_output=True, text=True, timeout=10)
             if version_result.returncode == 0:
-                info['Android版本'] = version_result.stdout.strip()
-            
-            # 获取设备制造商
+                info['android_version'] = version_result.stdout.strip()
+            else:
+                self.logger.warning(f"获取Android版本失败: {version_result.stderr}")
+                
+            # 获取制造商
+            self.logger.debug(f"获取制造商: {device_id}")
             manufacturer_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'getprop', 'ro.product.manufacturer'],
                                                capture_output=True, text=True, timeout=10)
             if manufacturer_result.returncode == 0:
-                info['制造商'] = manufacturer_result.stdout.strip()
-            
-            self.logger.info(f"设备信息: {info}")
+                info['manufacturer'] = manufacturer_result.stdout.strip()
+            else:
+                self.logger.warning(f"获取制造商失败: {manufacturer_result.stderr}")
+                
+            self.logger.debug(f"设备信息获取完成: {info}")
             return info
             
         except subprocess.TimeoutExpired:
-            self.logger.error("获取设备信息超时")
-            return info
+            self.logger.error(f"获取设备信息超时: {device_id}")
+            return {}
+        except FileNotFoundError:
+            self.logger.error(f"ADB可执行文件未找到: {self.adb_path}")
+            return {}
+        except subprocess.SubprocessError as e:
+            self.logger.error(f"执行ADB命令时出错: {str(e)}")
+            return {}
         except Exception as e:
-            self.logger.error(f"获取设备信息时出错: {e}")
-            return info
-    
+            self.logger.error(f"获取设备信息时出现未预期错误: {str(e)}")
+            return {}
+            
     def get_device_permissions(self, device_id: str) -> Dict[str, bool]:
-        """
-        检查设备权限
+        """获取设备权限状态（别名方法）
         
         Args:
-            device_id (str): 设备序列号
+            device_id: 设备ID
             
         Returns:
-            Dict[str, bool]: 权限状态字典
+            权限状态字典
         """
-        permissions = {
-            '存储权限': False,
-            '短信权限': False,
-            '通讯录权限': False
-        }
+        return self.check_permissions(device_id)
+            
+    def check_permissions(self, device_id: str) -> Dict[str, bool]:
+        """检查设备权限状态
         
-        # 检查设备ID是否有效
-        if not device_id:
-            self.logger.warning("设备ID为空，无法检查权限")
-            return permissions
+        Args:
+            device_id: 设备ID
+            
+        Returns:
+            权限状态字典
+        """
+        self.logger.info(f"检查设备权限: {device_id}")
+        permissions = {}
         
         try:
-            self.logger.info(f"检查设备 {device_id} 的权限")
-            
-            # 检查存储权限（通过尝试读取外部存储）
+            # 检查存储权限
+            self.logger.debug(f"检查存储权限: {device_id}")
             storage_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'ls', '/sdcard/'],
                                           capture_output=True, text=True, timeout=10)
             permissions['存储权限'] = storage_result.returncode == 0
+            if not permissions['存储权限']:
+                self.logger.warning(f"存储权限检查失败: {storage_result.stderr}")
             
-            # 这里可以添加更多权限检查逻辑
-            # 为简化起见，暂时设置为True
-            permissions['短信权限'] = True
-            permissions['通讯录权限'] = True
+            # 检查ADB权限
+            self.logger.debug(f"检查ADB调试权限: {device_id}")
+            adb_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'id'],
+                                      capture_output=True, text=True, timeout=10)
+            permissions['ADB调试权限'] = adb_result.returncode == 0
+            if not permissions['ADB调试权限']:
+                self.logger.warning(f"ADB调试权限检查失败: {adb_result.stderr}")
+                
+            # 检查联系人读取权限
+            self.logger.debug(f"检查联系人读取权限: {device_id}")
+            contacts_result = subprocess.run(
+                [self.adb_path, '-s', device_id, 'shell', 'content', 'query', '--uri', 'content://com.android.contacts/data/phones', '--limit', '1'],
+                capture_output=True, text=True, timeout=10
+            )
+            permissions['android.permission.READ_CONTACTS'] = contacts_result.returncode == 0
+            if not permissions['android.permission.READ_CONTACTS']:
+                self.logger.warning(f"联系人读取权限检查失败: {contacts_result.stderr}")
             
-            self.logger.info(f"权限检查结果: {permissions}")
+            self.logger.debug(f"权限检查完成: {permissions}")
             return permissions
             
         except subprocess.TimeoutExpired:
-            self.logger.error("权限检查超时")
-            return permissions
+            self.logger.error(f"权限检查超时: {device_id}")
+            return {}
+        except FileNotFoundError:
+            self.logger.error(f"ADB可执行文件未找到: {self.adb_path}")
+            return {}
+        except subprocess.SubprocessError as e:
+            self.logger.error(f"执行ADB命令时出错: {str(e)}")
+            return {}
         except Exception as e:
-            self.logger.error(f"权限检查时出错: {e}")
-            return permissions
+            self.logger.error(f"权限检查时出现未预期错误: {str(e)}")
+            return {}

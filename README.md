@@ -177,3 +177,49 @@ pytest
 ## 9. 许可证
 
 本项目采用MIT许可证，详情请见 [LICENSE](file:///d:/vscode/code/python/android-data-reader/LICENSE) 文件。
+
+## 安装
+
+### 系统要求
+- Windows 7 或更高版本
+- Python 3.9 (推荐使用项目自带的Python环境)
+
+### 安装步骤
+1. 克隆或下载本项目
+2. 运行 `scripts/install_drivers.bat` 安装ADB驱动
+3. 运行 `scripts/verify_env.py` 验证环境配置
+
+## 打包为可执行文件
+
+要将项目打包为Windows可执行文件(.exe)，请执行以下步骤：
+
+1. 安装开发依赖:
+   ```
+   pip install -r requirements-dev.txt
+   ```
+
+2. 运行打包脚本:
+   ```
+   python scripts/build_exe.py
+   ```
+
+3. 打包完成后，可执行文件将位于 `dist/AndroidDataReader.exe`
+
+## 打包带时效限制的试用版
+
+要打包一个100天后过期的试用版exe文件，请执行以下步骤：
+
+1. 安装开发依赖:
+   ```
+   pip install -r requirements-dev.txt
+   ```
+
+2. 运行试用版打包脚本:
+   ```
+   python scripts/build_trial_exe.py
+   ```
+
+3. 打包完成后，可执行文件将位于 `dist/AndroidDataReader_Trial.exe`
+   注意：此版本将在100天后过期，无法继续使用
+
+## 使用说明
