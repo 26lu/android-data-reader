@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 from .device_manager import DeviceManager
 from .logger import default_logger
+import re
 
 @dataclass
 class Contact:
@@ -198,6 +199,80 @@ class ContactsReader:
 
         return result
 
+    def _normalize_name(self, name: str) -> str:
+        """标准化姓名，用于比较
+
+        Args:
+            name: 原始姓名
+
+        Returns:
+            标准化后的姓名
+        """
+        if not name:
+            return ""
+        # 移除空格和其他分隔符，统一小写进行比较
+        return ''.join(name.lower().split())
+
+    def _normalize_phone(self, phone: str) -> str:
+        """标准化电话号码，移除空格、破折号等分隔符以便比较
+
+        Args:
+            phone: 原始电话号码
+
+        Returns:
+            标准化后的电话号码
+        """
+        if not phone:
+            return ""
+        # 移除所有非数字字符
+        return ''.join(filter(str.isdigit, phone))
+
+    def _should_merge_contacts(self, contact1: Contact, contact2: Contact) -> bool:
+        """判断两个联系人是否应该合并
+
+        Args:
+            contact1: 第一个联系人
+            contact2: 第二个联系人
+
+        Returns:
+            是否应该合并
+        """
+        # 如果电话号码相同，则合并
+        for phone1 in contact1.phone:
+            for phone2 in contact2.phone:
+                if phone1 and phone2 and phone1 == phone2:
+                    return True
+        return False
+
+    def _merge_contacts(self, existing_contact: Contact, new_contact: Contact) -> Contact:
+        """合并两个联系人
+
+        Args:
+            existing_contact: 已存在的联系人
+            new_contact: 新的联系人
+
+        Returns:
+            合并后的联系人
+        """
+        # 合并电话号码
+        for phone in new_contact.phone:
+            if phone and phone not in existing_contact.phone:
+                existing_contact.phone.append(phone)
+
+        # 如果新联系人的姓名更完整，则使用新联系人的姓名
+        if len(new_contact.name) > len(existing_contact.name):
+            existing_contact.name = new_contact.name
+
+        # 合并其他信息
+        if not existing_contact.email and new_contact.email:
+            existing_contact.email = new_contact.email
+        if not existing_contact.group and new_contact.group:
+            existing_contact.group = new_contact.group
+        if not existing_contact.notes and new_contact.notes:
+            existing_contact.notes = new_contact.notes
+
+        return existing_contact
+
 
     def get_all_contacts(self, device_id: Optional[str] = None) -> List[Contact]:
         """获取所有联系人
@@ -234,37 +309,87 @@ class ContactsReader:
 
         self.logger.info(f"从设备 {device_id} 获取到 {len(results)} 条原始联系人数据")
 
+        # 用于跟踪已处理的联系人，避免重复
+        processed_contacts: List[Contact] = []
+        contact_map: Dict[str, Contact] = {}  # 用于通过标准化电话号码快速查找联系人
+
         # 处理查询结果
         for i, result in enumerate(results):
-
             # 直接使用display_name字段作为姓名
             name = ''
-            # 查找包含display_name的键，正确处理"数字 display_name"格式
+
+            # 查找包含sort_key的键，正确处理"数字 sort_key"格式
             for key in result.keys():
                 self.logger.debug(f"检查键: '{key}'")
-                if key.endswith(' display_name') and not key.endswith(' display_name_alt') and result[key]:
-                    name = result[key]
+                if 'sort_key' in key and result[key]:
+
+                    name = self.process_value(result, key)
+                    self.logger.debug(f"找到sort_key字段: key='{key}', value='{result[key]}'")
                     break
 
-            # 如果没有找到，尝试display_name_alt
+            phone = result.get('data1', '')
+
+            # 如果没有找到sort_key或提取的姓名为空，尝试display_name_alt
             if not name:
                 for key in result.keys():
                     self.logger.debug(f"检查alt键: '{key}'")
-                    if key.endswith(' display_name_alt') and result[key]:
+                    if 'display_name_alt' in key and result[key]:
                         name = result[key]
+                        self.logger.debug(f"找到备选姓名字段: key='{key}', value='{result[key]}'")
                         break
 
-
+            # 创建联系人对象
             contact = Contact(
-                name=name,
-                phone=result.get('data1', ''),  # data1字段存储电话号码
+                name=name if name else '未知姓名',
+                phone=phone,  # data1字段存储电话号码
                 email='',  # 在这个查询中不包含邮箱
                 group=result.get('group_name', ''),
                 notes=''
             )
-            contacts.append(contact)
 
-        self.logger.info(f"处理后得到 {len(contacts)} 个联系人对象")
+            # 标准化电话号码用于比较
+            normalized_phone = self._normalize_phone(phone)
 
+            # 检查是否已存在相同电话号码的联系人，如果存在则合并
+            if normalized_phone and normalized_phone in contact_map:
+                existing_contact = contact_map[normalized_phone]
+                # 如果新联系人的姓名更完整，则更新姓名
+                if len(contact.name) > len(existing_contact.name) and contact.name != '未知姓名':
+                    existing_contact.name = contact.name
+                # 确保电话号码在列表中
+                if phone and phone not in existing_contact.phone:
+                    existing_contact.phone.append(phone)
+            else:
+                # 添加新联系人
+                processed_contacts.append(contact)
+                if normalized_phone:
+                    contact_map[normalized_phone] = contact
 
-        return contacts
+        self.logger.info(f"处理后得到 {len(processed_contacts)} 个联系人对象")
+
+        return processed_contacts
+    import re
+
+    def is_chinese(self, text):
+        # 检查是否包含中文字符（\u4e00-\u9fff 是 CJK 统一汉字）
+        return any(re.search(r'[\u4e00-\u9fff]', word) for word in text.split())
+
+    def process_value(self, result, key):
+        sort_key_value = result[key]
+
+        if self.is_chinese(sort_key_value):
+            name = self.extract_even_positions(sort_key_value)
+        else:
+            name = sort_key_value
+
+        return name
+
+    def extract_even_positions(self, text):
+        words = text.split()
+        selected = words[1::2]  # 提取第 2、4、6... 个词
+
+        if len(selected) == 2:
+            return ' '.join(selected)
+        else:
+            return ''.join(selected)
+
