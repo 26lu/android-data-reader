@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from .device_manager import DeviceManager
 from .logger import default_logger
 import re
+from collections import defaultdict
 
 @dataclass
 class Contact:
@@ -275,17 +276,8 @@ class ContactsReader:
 
 
     def get_all_contacts(self, device_id: Optional[str] = None) -> List[Contact]:
-        """获取所有联系人
+        """获取所有联系人，包括姓名、电话、邮箱、分组、备注"""
 
-        Args:
-            device_id: 设备ID
-
-        Returns:
-            联系人对象列表
-        """
-        contacts = []
-
-        # 检查设备连接
         if not device_id:
             devices = self.device_manager.get_devices()
             if not devices:
@@ -296,79 +288,86 @@ class ContactsReader:
         # 检查权限
         permissions = self.device_manager.get_device_permissions(device_id)
         if not permissions.get('android.permission.READ_CONTACTS', False):
-            # 检查是否是因为设备未授权导致的权限检查失败
             if 'unauthorized' in str(permissions.get('error', '')).lower():
                 self.logger.error("设备未授权，请在手机上确认USB调试授权")
             else:
                 self.logger.error("没有读取通讯录权限")
             return []
 
-        # 使用原始的查询方式，直接查询联系人数据表
-        query = "content://com.android.contacts/data/phones"
-        results = self._run_query(query, device_id)
+        # 获取 group_id → group_name 映射
+        group_map = {}
+        try:
+            group_result = self._run_query("content://com.android.contacts/groups", device_id)
+            for row in group_result:
+                group_id = row.get('_id')
+                group_name = row.get('title')
+                if group_id and group_name:
+                    group_map[group_id] = group_name
+        except Exception as e:
+            self.logger.warning(f"无法读取分组信息: {str(e)}")
 
+        # 查询 data 表（包含电话、邮箱、分组、备注等）
+        query = "content://com.android.contacts/data"
+        results = self._run_query(query, device_id)
         self.logger.info(f"从设备 {device_id} 获取到 {len(results)} 条原始联系人数据")
 
-        # 用于跟踪已处理的联系人，避免重复
-        processed_contacts: List[Contact] = []
-        contact_map: Dict[str, Contact] = {}  # 用于通过标准化电话号码快速查找联系人
+        # 用姓名作为key，存储联系人对象
+        contact_map = {}
 
-        # 处理查询结果
-        for i, result in enumerate(results):
-            # 直接使用display_name字段作为姓名
+        for row in results:
+            mimetype = row.get('mimetype', '')
+            data1 = row.get('data1', '')
+            if not data1:
+                continue
+
+            # 尝试获取姓名，优先级 sort_key > display_name > display_name_alt
             name = ''
-
-            # 查找包含sort_key的键，正确处理"数字 sort_key"格式
-            for key in result.keys():
-                self.logger.debug(f"检查键: '{key}'")
-                if 'sort_key' in key and result[key]:
-
-                    name = self.process_value(result, key)
-                    self.logger.debug(f"找到sort_key字段: key='{key}', value='{result[key]}'")
+            for k in ['sort_key', 'display_name', 'display_name_alt']:
+                if k in row and row[k]:
+                    name = self.process_value(row, k)
                     break
 
-            phone = result.get('data1', '')
-
-            # 如果没有找到sort_key或提取的姓名为空，尝试display_name_alt
             if not name:
-                for key in result.keys():
-                    self.logger.debug(f"检查alt键: '{key}'")
-                    if 'display_name_alt' in key and result[key]:
-                        name = result[key]
-                        self.logger.debug(f"找到备选姓名字段: key='{key}', value='{result[key]}'")
-                        break
+                # 没有姓名的忽略
+                continue
 
-            # 创建联系人对象
-            contact = Contact(
-                name=name if name else '未知姓名',
-                phone=phone,  # data1字段存储电话号码
-                email='',  # 在这个查询中不包含邮箱
-                group=result.get('group_name', ''),
-                notes=''
-            )
-
-            # 标准化电话号码用于比较
-            normalized_phone = self._normalize_phone(phone)
-
-            # 检查是否已存在相同电话号码的联系人，如果存在则合并
-            if normalized_phone and normalized_phone in contact_map:
-                existing_contact = contact_map[normalized_phone]
-                # 如果新联系人的姓名更完整，则更新姓名
-                if len(contact.name) > len(existing_contact.name) and contact.name != '未知姓名':
-                    existing_contact.name = contact.name
-                # 确保电话号码在列表中
-                if phone and phone not in existing_contact.phone:
-                    existing_contact.phone.append(phone)
+            # 如果该姓名已经存在，获取已存联系人，否则新建
+            if name in contact_map:
+                contact = contact_map[name]
             else:
-                # 添加新联系人
-                processed_contacts.append(contact)
-                if normalized_phone:
-                    contact_map[normalized_phone] = contact
+                contact = Contact(name=name)
+                contact_map[name] = contact
 
-        self.logger.info(f"处理后得到 {len(processed_contacts)} 个联系人对象")
+            # 根据mimetype填充对应字段，合并时避免重复添加
+            if mimetype == 'vnd.android.cursor.item/phone_v2':
+                normalized = self._normalize_phone(data1)
+                if normalized and normalized not in contact.phone:
+                    contact.phone.append(normalized)
 
-        return processed_contacts
-    import re
+            elif mimetype == 'vnd.android.cursor.item/email_v2':
+                if data1 not in contact.email:
+                    contact.email.append(data1)
+
+            elif mimetype == 'vnd.android.cursor.item/group_membership':
+                group_id = data1
+                group_name = group_map.get(group_id, '')
+                if group_name and group_name not in contact.group:
+                    if contact.group:
+                        contact.group += ", " + group_name
+                    else:
+                        contact.group = group_name
+
+            elif mimetype == 'vnd.android.cursor.item/note':
+                # 合并备注：如果已有备注且不重复，追加；否则直接赋值
+                if contact.notes:
+                    if data1 not in contact.notes:
+                        contact.notes += " | " + data1
+                else:
+                    contact.notes = data1
+
+        final_contacts = list(contact_map.values())
+        self.logger.info(f"成功构建 {len(final_contacts)} 个合并后的联系人对象")
+        return final_contacts
 
     def is_chinese(self, text):
         # 检查是否包含中文字符（\u4e00-\u9fff 是 CJK 统一汉字）
@@ -392,4 +391,3 @@ class ContactsReader:
             return ' '.join(selected)
         else:
             return ''.join(selected)
-
