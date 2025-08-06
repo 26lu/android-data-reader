@@ -4,9 +4,8 @@ import logging
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
-from .device_manager import DeviceManager
+from .device_manager import DeviceManager  # 确保此模块存在并正确导入
 
-from datetime import datetime
 
 @dataclass
 class SMSMessage:
@@ -18,14 +17,17 @@ class SMSMessage:
     @property
     def datetime_str(self) -> str:
         return datetime.fromtimestamp(self.date / 1000).strftime("%Y-%m-%d %H:%M:%S")
+
     @property
     def time(self) -> str:
         """兼容旧代码"""
         return self.datetime_str
+
     @property
     def content(self) -> str:
         """兼容旧字段 'content'，实际返回 body"""
         return self.body
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'address': self.address,
@@ -44,14 +46,16 @@ class SMSMessage:
             type=data['type']
         )
 
+
 class SMSReader:
     def __init__(self, device_manager: DeviceManager, logger=None):
         self.device_manager = device_manager
         self.logger = logger or logging.getLogger(__name__)
 
+        # 配置日志（如果没有配置过）
         if not logging.getLogger().handlers:
             logging.basicConfig(
-                level=logging.INFO,
+                level=logging.DEBUG,
                 format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             )
 
@@ -59,10 +63,7 @@ class SMSReader:
         device_id = device_id or ''
         cmd_args = ['shell', 'content', 'query', '--uri', query]
 
-        # Fix: device_id must be None or a string
         success, output = self.device_manager._run_adb_command(cmd_args, device_id if device_id else "")
-
-
 
         if not success:
             self.logger.error(f"查询失败: {output}")
@@ -86,9 +87,9 @@ class SMSReader:
                             row_data[key.strip()] = value.strip()
                     results.append(row_data)
                 except (ValueError, IndexError) as e:
-                    self.logger.error(f"解析行失败: {line}, 错误: {str(e)}")
+                    self.logger.error(f"解析行失败: {line}, 错误: {str(e)}", exc_info=True)
                 except Exception as e:
-                    self.logger.error(f"解析行时出现未预期错误: {line}, 错误: {str(e)}")
+                    self.logger.error(f"解析行时出现未预期错误: {line}, 错误: {str(e)}", exc_info=True)
 
         self.logger.debug(f"成功解析 {len(results)} 行数据")
         return results
@@ -115,7 +116,7 @@ class SMSReader:
                 )
                 messages.append(message)
             except ValueError as e:
-                self.logger.error(f"解析短信数据失败: {str(e)}")
+                self.logger.error(f"解析短信数据失败: {str(e)}", exc_info=True)
 
         return messages
 
@@ -155,39 +156,61 @@ class SMSReader:
         self.logger.info(f"开始保存 {len(messages)} 条短信数据到 {output_path}")
 
         if not output_path:
+            self.logger.error("保存失败：输出路径不能为空")
             raise ValueError("输出路径不能为空")
 
         try:
             abs_output_path = os.path.abspath(output_path)
             abs_cwd = os.path.abspath(os.getcwd())
-            if not abs_output_path.startswith(abs_cwd):
-                raise ValueError("输出路径必须在当前目录内")
+            common_path = os.path.commonpath([abs_output_path, abs_cwd])
+            if common_path != abs_cwd:
+                err_msg = f"输出路径必须在当前工作目录 {abs_cwd} 内，但传入路径为 {abs_output_path}"
+                self.logger.error(err_msg)
+                raise ValueError(err_msg)
         except Exception as e:
-            raise ValueError(f"输出路径验证失败: {str(e)}")
+            self.logger.error(f"输出路径验证失败: {e}", exc_info=True)
+            raise ValueError(f"输出路径验证失败: {e}")
 
         try:
+            dir_name = os.path.dirname(abs_output_path)
+            if dir_name and not os.path.exists(dir_name):
+                os.makedirs(dir_name, exist_ok=True)
+
             data = [sms.to_dict() for sms in messages]
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
+            with open(abs_output_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+
+            self.logger.info(f"短信数据成功保存到 {abs_output_path}")
+
         except Exception as e:
-            raise RuntimeError(f"保存短信数据时出错: {str(e)}")
+            self.logger.error(f"保存短信数据时出错: {e}", exc_info=True)
+            raise RuntimeError(f"保存短信数据时出错: {e}")
 
     def load_sms(self, input_path: str) -> List[SMSMessage]:
-        if not input_path or not os.path.exists(input_path):
+        if not input_path:
+            self.logger.warning("加载失败：输入路径为空")
+            return []
+
+        if not os.path.exists(input_path):
+            self.logger.warning(f"加载失败：文件不存在，路径 {input_path}")
             return []
 
         try:
             abs_input_path = os.path.abspath(input_path)
             abs_cwd = os.path.abspath(os.getcwd())
-            if not abs_input_path.startswith(abs_cwd):
+            common_path = os.path.commonpath([abs_input_path, abs_cwd])
+            if common_path != abs_cwd:
+                self.logger.warning(f"输入路径 {abs_input_path} 不在当前工作目录 {abs_cwd} 内")
                 return []
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"输入路径验证失败: {e}", exc_info=True)
             return []
 
         try:
             with open(input_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+            self.logger.info(f"成功加载短信数据，共 {len(data)} 条")
             return [SMSMessage.from_dict(item) for item in data]
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"加载短信数据失败: {e}", exc_info=True)
             return []

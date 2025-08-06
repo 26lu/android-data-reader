@@ -1,29 +1,112 @@
-# src/ui/photos_tab.py
-
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QPushButton,
-                             QListWidget, QListWidgetItem, QHBoxLayout,
-                             QLineEdit, QFileDialog, QMessageBox, QLabel,
-                             QProgressBar, QSizePolicy, QSplitter)
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QPixmap,QIcon
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QPushButton, QListWidget, QListWidgetItem,
+    QHBoxLayout, QLineEdit, QFileDialog, QMessageBox, QLabel,
+    QProgressBar, QSizePolicy, QSplitter
+)
+from PyQt5.QtCore import Qt, QSize, QRunnable, QThreadPool, pyqtSignal, QObject
+from PyQt5.QtGui import QPixmap, QIcon, QFontMetrics
 import os
 import logging
 from datetime import datetime
 from typing import List
 
 from src.core.device_manager import DeviceManager
-from src.core.logger import default_logger
-from src.core.photos_reader import PhotosReader, PhotoInfo  # 重点：导入
+from src.core.photos_reader import PhotosReader, PhotoInfo
+
+
+class ThumbLoaderSignals(QObject):
+    finished = pyqtSignal(object, object)  # 改为object类型，兼容所有对象
+
+
+class ThumbLoader(QRunnable):
+    """线程池异步加载缩略图"""
+    def __init__(self, photo: PhotoInfo, item: QListWidgetItem,
+                 photos_reader: PhotosReader, device_id: str, thumb_dir: str):
+        super().__init__()
+        self.photo = photo
+        self.item = item
+        self.photos_reader = photos_reader
+        self.device_id = device_id
+        self.thumb_dir = thumb_dir
+        self.signals = ThumbLoaderSignals()
+
+    def run(self):
+        filename = os.path.basename(self.photo.path)
+        thumb_path = os.path.join(self.thumb_dir, f"thumb_{filename}")
+        pixmap = None
+
+        if os.path.exists(thumb_path):
+            pixmap = QPixmap(thumb_path)
+        else:
+            try:
+                local_path = self.photos_reader.download_photo(self.photo, self.thumb_dir, self.device_id)
+                if local_path and os.path.exists(local_path):
+                    pixmap = QPixmap(local_path)
+            except Exception as e:
+                logging.getLogger('PhotosTab').warning(f"缩略图下载失败: {e}")
+
+        if pixmap and not pixmap.isNull():
+            scaled_pixmap = pixmap.scaled(128, 128, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            icon = QIcon(scaled_pixmap)
+            self.signals.finished.emit(self.item, icon)
+
 
 class PhotosTab(QWidget):
+    PAGE_SIZE = 50  # 每次加载照片数量
+
+    class PhotoItemWidget(QWidget):
+        def __init__(self, photo: PhotoInfo, pixmap=None):
+            super().__init__()
+            self.photo = photo
+            layout = QHBoxLayout(self)
+            layout.setContentsMargins(5, 5, 5, 5)
+            layout.setSpacing(10)
+
+            # 缩略图标签，固定大小128x128，左边垂直居中
+            self.thumb_label = QLabel()
+            self.thumb_label.setFixedSize(128, 128)
+            self.thumb_label.setAlignment(Qt.AlignCenter)
+            if pixmap:
+                scaled = pixmap.scaled(128, 128, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.thumb_label.setPixmap(scaled)
+            layout.addWidget(self.thumb_label, 0, Qt.AlignVCenter)
+
+            # 右边竖直布局放文件名和日期
+            text_layout = QVBoxLayout()
+            text_layout.setContentsMargins(0, 0, 0, 0)
+            text_layout.setSpacing(5)
+
+            filename = os.path.basename(photo.path)
+            font = self.font()
+            metrics = QFontMetrics(font)
+            elided_filename = metrics.elidedText(filename, Qt.ElideRight, 180)
+            self.name_label = QLabel(elided_filename)
+            self.name_label.setStyleSheet("font-weight: bold;")
+            self.name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            self.name_label.setToolTip(filename)  # 鼠标悬停显示完整文件名
+
+            date_str = datetime.fromtimestamp(photo.date / 1000).strftime('%Y-%m-%d\n%H:%M:%S')
+            self.date_label = QLabel(date_str)
+            self.date_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+            text_layout.addWidget(self.name_label)
+            text_layout.addWidget(self.date_label)
+
+            layout.addLayout(text_layout)
+            self.setMinimumHeight(140)
+
     def __init__(self, device_manager: DeviceManager):
         super().__init__()
         self.device_manager = device_manager
         self.current_device = None
         self.photo_data: List[PhotoInfo] = []
+        self.loaded_count = 0  # 已加载照片计数
         self.thumb_dir = 'thumbnails'
         self.photos_reader = PhotosReader(device_manager)
         self.logger = logging.getLogger('PhotosTab')
+
+        self.thread_pool = QThreadPool()
+
         self.init_ui()
 
     def init_ui(self):
@@ -50,16 +133,29 @@ class PhotosTab(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.hide()
 
-        # 照片列表
+        # 照片列表 - 改为列表模式，使用自定义控件
         self.photo_list = QListWidget()
-        self.photo_list.setViewMode(QListWidget.IconMode)
-        self.photo_list.setIconSize(QSize(128, 128))
-        self.photo_list.setSpacing(10)
-        self.photo_list.setResizeMode(QListWidget.Adjust)
+        self.photo_list.setViewMode(QListWidget.ListMode)  # 列表模式
         self.photo_list.setSelectionMode(QListWidget.MultiSelection)
-        self.photo_list.itemClicked.connect(self.on_photo_selected)  # 绑定点击事件
+        self.photo_list.setSpacing(5)
+        self.photo_list.setStyleSheet("""
+            QListWidget::item {
+                border: 1px solid #cccccc;
+                border-radius: 6px;
+                padding: 5px;
+                margin: 4px;
+                background-color: #fafafa;
+            }
+            QListWidget::item:selected {
+                border: 2px solid #3399ff;
+                background-color: #d6eaff;
+            }
+        """)
+        self.photo_list.itemClicked.connect(self.on_photo_selected)
 
-        # 显示大图的 QLabel
+        self.photo_list.verticalScrollBar().valueChanged.connect(self.on_scroll)
+
+        # 大图预览 QLabel
         self.photo_preview = QLabel()
         self.photo_preview.setAlignment(Qt.AlignCenter)
         self.photo_preview.setMinimumSize(400, 400)
@@ -69,7 +165,7 @@ class PhotosTab(QWidget):
         # 状态标签
         self.status_label = QLabel()
 
-        # 用 QSplitter 实现左右分栏：左边照片列表，右边大图预览
+        # 左右分栏
         splitter = QSplitter(Qt.Horizontal)
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
@@ -112,7 +208,6 @@ class PhotosTab(QWidget):
             self.photo_preview.clear()
             self.photo_preview.setText("无法显示该图片")
         else:
-            # 大图自适应右侧 QLabel 大小
             scaled_pixmap = pixmap.scaled(
                 self.photo_preview.size(),
                 Qt.KeepAspectRatio,
@@ -120,10 +215,7 @@ class PhotosTab(QWidget):
             )
             self.photo_preview.setPixmap(scaled_pixmap)
 
-
-
     def resizeEvent(self, event):
-        # 当窗口大小变化时，如果有图片，重新缩放显示
         if self.photo_preview.pixmap():
             scaled_pixmap = self.photo_preview.pixmap().scaled(
                 self.photo_preview.size(),
@@ -140,7 +232,6 @@ class PhotosTab(QWidget):
             photo = item.data(Qt.UserRole)
             filename = os.path.basename(photo.path).lower()
             date_str = datetime.fromtimestamp(photo.date / 1000).strftime('%Y-%m-%d %H:%M:%S').lower()
-            # 判断搜索关键字是否出现在文件名或时间字符串里
             match = (text in filename) or (text in date_str)
             item.setHidden(not match)
 
@@ -149,54 +240,51 @@ class PhotosTab(QWidget):
             QMessageBox.warning(self, "警告", "未连接设备，无法加载照片")
             return
 
-        self.progress_bar.setValue(0)
-        self.progress_bar.show()
         self.photo_list.clear()
         self.photo_data = []
+        self.loaded_count = 0
 
         try:
             self.photo_data = self.photos_reader.scan_photos(self.current_device)
         except Exception as e:
             QMessageBox.critical(self, "错误", f"加载照片失败: {e}")
-            self.progress_bar.hide()
             return
 
-        self.progress_bar.setMaximum(len(self.photo_data))
+        self.status_label.setText(f"共发现 {len(self.photo_data)} 张照片")
+        self.load_next_page()
 
-        for i, photo in enumerate(self.photo_data):
+    def load_next_page(self):
+        start = self.loaded_count
+        end = min(start + self.PAGE_SIZE, len(self.photo_data))
+
+        for i in range(start, end):
+            photo = self.photo_data[i]
             item = QListWidgetItem()
-            filename = os.path.basename(photo.path)
-            date_str = datetime.fromtimestamp(photo.date / 1000).strftime('%Y-%m-%d %H:%M:%S')
-            item.setText(f"{filename}\n{date_str}")
             item.setData(Qt.UserRole, photo)
-
-            thumb_path = os.path.join(self.thumb_dir, f"thumb_{filename}")
-            pixmap = None
-
-            if os.path.exists(thumb_path):
-                pixmap = QPixmap(thumb_path)
-            else:
-                # 如果缩略图不存在，尝试下载原图作为缩略图
-                try:
-                    local_path = self.photos_reader.download_photo(photo, self.thumb_dir, self.current_device)
-                    if local_path and os.path.exists(local_path):
-                        pixmap = QPixmap(local_path)
-                except Exception as e:
-                    self.logger.warning(f"下载缩略图失败: {e}")
-
-            # 设置图标
-            if pixmap and not pixmap.isNull():
-                scaled_pixmap = pixmap.scaled(128, 128, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                item.setIcon(QIcon(scaled_pixmap))  # 注意：QIcon(...)
-
+            item.setSizeHint(QSize(0, 140))  # 控制item高度，宽度自适应
 
             self.photo_list.addItem(item)
-            self.progress_bar.setValue(i + 1)
 
+            # 先放一个空白widget
+            widget = self.PhotoItemWidget(photo)
+            self.photo_list.setItemWidget(item, widget)
 
-        self.progress_bar.hide()
-        self.status_label.setText(f"共加载 {len(self.photo_data)} 张照片")
+            # 异步加载缩略图，回调更新widget
+            def update_thumb(icon, widget=widget):
+                pixmap = icon.pixmap(128, 128)
+                widget.thumb_label.setPixmap(pixmap)
 
+            loader = ThumbLoader(photo, item, self.photos_reader, self.current_device, self.thumb_dir)
+            loader.signals.finished.connect(lambda item_, icon, w=widget: update_thumb(icon, w))
+            self.thread_pool.start(loader)
+
+        self.loaded_count = end
+
+    def on_scroll(self, value):
+        scrollbar = self.photo_list.verticalScrollBar()
+        if value >= scrollbar.maximum() - 50:
+            if self.loaded_count < len(self.photo_data):
+                self.load_next_page()
 
     def export_selected_photos(self):
         selected_items = self.photo_list.selectedItems()
@@ -221,13 +309,11 @@ class PhotosTab(QWidget):
         QMessageBox.information(self, '导出完成', f'成功导出 {success_count} 张照片')
 
     def on_device_connected(self, device_id: str):
-        """设备连接时调用"""
         self.current_device = device_id
         self.refresh_button.setEnabled(True)
         self.status_label.setText(f"设备已连接: {device_id}")
 
     def on_device_disconnected(self):
-        """设备断开时调用"""
         self.current_device = None
         self.refresh_button.setEnabled(False)
         self.photo_list.clear()
