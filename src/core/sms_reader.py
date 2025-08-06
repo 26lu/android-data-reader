@@ -60,10 +60,8 @@ class SMSReader:
         cmd_args = ['shell', 'content', 'query', '--uri', query]
 
         # Fix: device_id must be None or a string
-        success, output = self.device_manager._run_adb_command(
-            cmd_args,
-            device_id if device_id else ""
-        )
+        success, output = self.device_manager._run_adb_command(cmd_args, device_id if device_id else "")
+
 
 
         if not success:

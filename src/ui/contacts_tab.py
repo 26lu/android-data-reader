@@ -44,7 +44,7 @@ class ContactsTab(QWidget):
 
         self.refresh_button = QPushButton('刷新')
         self.refresh_button.clicked.connect(self.load_contacts)
-        self.refresh_button.setEnabled(False)  # 初始禁用
+        self.refresh_button.setEnabled(True)  # 初始禁用
         search_layout.addWidget(self.refresh_button)
 
         self.export_button = QPushButton('导出')
