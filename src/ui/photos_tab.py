@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QPushButton,
                              QLineEdit, QFileDialog, QMessageBox, QLabel,
                              QProgressBar, QSizePolicy, QSplitter)
 from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap,QIcon
 import os
 import logging
 from datetime import datetime
@@ -167,19 +167,32 @@ class PhotosTab(QWidget):
             item = QListWidgetItem()
             filename = os.path.basename(photo.path)
             date_str = datetime.fromtimestamp(photo.date / 1000).strftime('%Y-%m-%d %H:%M:%S')
-            # 设置文字：文件名和日期
             item.setText(f"{filename}\n{date_str}")
             item.setData(Qt.UserRole, photo)
 
             thumb_path = os.path.join(self.thumb_dir, f"thumb_{filename}")
+            pixmap = None
+
             if os.path.exists(thumb_path):
                 pixmap = QPixmap(thumb_path)
-                if not pixmap.isNull():
-                    # 缩略图设置为小图标，大小128x128
-                    item.setIcon(pixmap.scaled(128, 128, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            else:
+                # 如果缩略图不存在，尝试下载原图作为缩略图
+                try:
+                    local_path = self.photos_reader.download_photo(photo, self.thumb_dir, self.current_device)
+                    if local_path and os.path.exists(local_path):
+                        pixmap = QPixmap(local_path)
+                except Exception as e:
+                    self.logger.warning(f"下载缩略图失败: {e}")
+
+            # 设置图标
+            if pixmap and not pixmap.isNull():
+                scaled_pixmap = pixmap.scaled(128, 128, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                item.setIcon(QIcon(scaled_pixmap))  # 注意：QIcon(...)
+
 
             self.photo_list.addItem(item)
             self.progress_bar.setValue(i + 1)
+
 
         self.progress_bar.hide()
         self.status_label.setText(f"共加载 {len(self.photo_data)} 张照片")
