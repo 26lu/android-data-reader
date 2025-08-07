@@ -23,7 +23,7 @@ def setup_logging():
             os.makedirs(log_dir)
         except Exception as e:
             print(f"警告: 无法创建日志目录 {log_dir}: {e}")
-    
+
     # 配置日志
     log_file = os.path.join(log_dir, 'android_reader.log')
     logging.basicConfig(
@@ -34,25 +34,25 @@ def setup_logging():
             logging.StreamHandler()
         ]
     )
-    
+
     logging.info("Android数据读取器启动")
 
 def check_expiration():
     """检查程序是否过期"""
     # 程序构建日期（这个会在打包时由脚本替换）
     BUILD_DATE = "2025-08-06"
-    
+
     try:
         build_date = datetime.strptime(BUILD_DATE, "%Y-%m-%d")
-        expiration_date = build_date + timedelta(days=100)
+        expiration_date = build_date + timedelta(days=200)
         current_date = datetime.now()
-        
+
         if current_date > expiration_date:
             # 程序已过期
             app = QApplication(sys.argv)
             QMessageBox.critical(
-                None, 
-                "程序已过期", 
+                None,
+                "程序已过期",
                 f"此程序已于{expiration_date.strftime('%Y-%m-%d')}过期，无法继续使用。\n请获取新版本。"
             )
             return False
@@ -69,18 +69,18 @@ def main():
     """主函数"""
     setup_logging()
     logging.info("Android数据读取器启动")
-    
+
     # 检查程序是否过期
     if not check_expiration():
         sys.exit(1)
-    
+
     # 导入UI模块（延迟导入以避免在过期检查前加载不必要的模块）
     from src.ui.main_window import MainWindow
-    
+
     app = QApplication(sys.argv)
     app.setApplicationName("Android数据读取器")
     app.setApplicationVersion("1.0.0")
-    
+
     try:
         window = MainWindow()
         window.show()
