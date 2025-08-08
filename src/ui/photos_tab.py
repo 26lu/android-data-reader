@@ -123,10 +123,21 @@ class PhotosTab(QWidget):
         self.refresh_button = QPushButton('刷新')
         self.refresh_button.clicked.connect(self.load_photos)
         self.refresh_button.setEnabled(True)
-        button_layout.addWidget(self.refresh_button)
-
+        
+        # 添加刷新间隔设置（类似联系人标签页）
+        self.refresh_interval_input = QLineEdit()
+        self.refresh_interval_input.setPlaceholderText('自动刷新间隔（秒），0为关闭')
+        self.refresh_interval_input.setFixedWidth(150)
+        self.refresh_interval_input.setText("30")  # 默认30秒
+        
+        self.set_refresh_interval_button = QPushButton('设置自动刷新')
+        self.set_refresh_interval_button.clicked.connect(self.set_refresh_interval)
+        
         self.export_button = QPushButton('导出选中')
         self.export_button.clicked.connect(self.export_selected_photos)
+        button_layout.addWidget(self.refresh_button)
+        button_layout.addWidget(self.refresh_interval_input)
+        button_layout.addWidget(self.set_refresh_interval_button)
         button_layout.addWidget(self.export_button)
 
         # 进度条
@@ -307,6 +318,31 @@ class PhotosTab(QWidget):
                 self.logger.error(f"导出照片失败: {e}")
 
         QMessageBox.information(self, '导出完成', f'成功导出 {success_count} 张照片')
+
+    def update_refresh_interval(self, value):
+        """更新刷新间隔"""
+        # 这个方法现在由SpinBox调用，但我们使用文本输入框方式
+        pass
+
+    def set_refresh_interval(self):
+        """设置自动刷新间隔"""
+        text = self.refresh_interval_input.text().strip()
+        try:
+            interval_sec = int(text)
+            if interval_sec < 0:
+                raise ValueError()
+        except ValueError:
+            QMessageBox.warning(self, '输入错误', '请输入一个非负整数秒数')
+            return
+
+        self.refresh_interval = interval_sec * 1000
+        if self.refresh_interval > 0:
+            if self.current_device:  # 只有在设备连接时才启动定时器
+                self.refresh_timer.start(self.refresh_interval)
+            self.logger.info(f"设置自动刷新间隔为 {interval_sec} 秒")
+        else:
+            self.refresh_timer.stop()
+            self.logger.info("关闭自动刷新")
 
     def on_device_connected(self, device_id: str):
         self.current_device = device_id

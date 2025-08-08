@@ -46,9 +46,21 @@ class SMSTab(QWidget):
         button_layout = QHBoxLayout()
         self.refresh_button = QPushButton('刷新')
         self.refresh_button.clicked.connect(self.load_messages)
+        
+        # 添加刷新间隔设置（类似联系人标签页）
+        self.refresh_interval_input = QLineEdit()
+        self.refresh_interval_input.setPlaceholderText('自动刷新间隔（秒），0为关闭')
+        self.refresh_interval_input.setFixedWidth(150)
+        self.refresh_interval_input.setText("30")  # 默认30秒
+        
+        self.set_refresh_interval_button = QPushButton('设置自动刷新')
+        self.set_refresh_interval_button.clicked.connect(self.set_refresh_interval)
+        
         self.export_button = QPushButton('导出选中会话')
         self.export_button.clicked.connect(self.export_selected_conversation)
         button_layout.addWidget(self.refresh_button)
+        button_layout.addWidget(self.refresh_interval_input)
+        button_layout.addWidget(self.set_refresh_interval_button)
         button_layout.addWidget(self.export_button)
 
         # 分割器 - 左侧会话，右侧详情
@@ -159,3 +171,22 @@ class SMSTab(QWidget):
                 QMessageBox.information(self, '成功', f'短信数据已导出到: {file_path}')
             except Exception as e:
                 QMessageBox.critical(self, '错误', f'导出失败: {str(e)}')
+
+    def update_refresh_interval(self, value):
+        """更新刷新间隔"""
+        self.refresh_interval = value * 1000  # 转换为毫秒
+        if self.refresh_timer.isActive():
+            self.refresh_timer.stop()
+            self.refresh_timer.start(self.refresh_interval)
+
+    def set_refresh_interval(self):
+        """设置自动刷新间隔"""
+        interval_sec = self.refresh_interval_spinbox.value()
+        self.refresh_interval = interval_sec * 1000
+        if self.refresh_interval > 0:
+            if self.current_device:  # 只有在设备连接时才启动定时器
+                self.refresh_timer.start(self.refresh_interval)
+            self.logger.info(f"设置自动刷新间隔为 {interval_sec} 秒")
+        else:
+            self.refresh_timer.stop()
+            self.logger.info("关闭自动刷新")
