@@ -47,7 +47,8 @@ class PhotosReader:
     def __init__(self, device_manager: DeviceManager):
         self.device_manager = device_manager
         self.logger = default_logger or logging.getLogger(__name__)
-        self.thumbnail_dir = 'thumbnails'
+        # 使用绝对路径确保临时目录可以被正确清理
+        self.thumbnail_dir = os.path.abspath('thumbnails')
         if not os.path.exists(self.thumbnail_dir):
             os.makedirs(self.thumbnail_dir)
 
@@ -66,17 +67,22 @@ class PhotosReader:
 
         photos = []
         for dir_path in ['/sdcard/DCIM', '/sdcard/Pictures']:
-            command = ['shell', 'find', dir_path, '-type', 'f',
-                       '-name', '*.jpg', '-o', '-name', '*.jpeg',
-                       '-o', '-name', '*.png', '-o', '-name', '*.gif']
-            success, output = self.device_manager._run_adb_command(command, device_id)
-            if success:
-                for path in output.splitlines():
-                    path = path.strip()
-                    if path:
-                        photo_info = self._get_photo_info(path, device_id)
-                        if photo_info:
-                            photos.append(photo_info)
+            try:
+                command = ['shell', 'find', dir_path, '-type', 'f',
+                           '-name', '*.jpg', '-o', '-name', '*.jpeg',
+                           '-o', '-name', '*.png', '-o', '-name', '*.gif']
+                success, output = self.device_manager._run_adb_command(command, device_id)
+                if success:
+                    for path in output.splitlines():
+                        path = path.strip()
+                        if path:
+                            photo_info = self._get_photo_info(path, device_id)
+                            if photo_info:
+                                photos.append(photo_info)
+            except Exception as e:
+                self.logger.error(f"扫描照片时出错: {str(e)}")
+                # 继续处理其他目录，不中断整个过程
+                continue
         return sorted(photos, key=lambda x: x.date, reverse=True)
 
     def _get_photo_info(self, path: str, device_id: str) -> Optional[PhotoInfo]:

@@ -11,7 +11,7 @@ import re
 import os
 import sys
 import logging
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from .logger import default_logger
 
 class DeviceManager:
@@ -94,21 +94,18 @@ class DeviceManager:
         self.logger.error("未找到可用的ADB")
         raise FileNotFoundError("未找到可用的ADB可执行文件")
         
-    def _run_adb_command(self, args: List[str], device_id: str, timeout: int = 30) -> Tuple[bool, str]:
-        """执行ADB命令
-        
-        Args:
-            args: ADB命令参数列表
-            device_id: 设备ID
-            timeout: 超时时间（秒）
-            
-        Returns:
-            (成功标志, 输出内容)
-        """
-        # 构建完整的ADB命令，包含设备ID
-        full_args = ['-s', device_id] + args
-        self.logger.debug(f"执行ADB命令: {self.adb_path} {' '.join(full_args)}")
+    def _run_adb_command(self, args: List[str], device_id: Optional[str] = None, 
+                        timeout: int = 30) -> Tuple[bool, str]:
+        """运行ADB命令"""
         try:
+            # 构建完整参数
+            full_args = []
+            if device_id:
+                full_args.extend(['-s', device_id])
+            full_args.extend(args)
+            
+            self.logger.debug(f"执行ADB命令: {self.adb_path} {' '.join(full_args)}")
+            
             # 在Windows上运行adb.exe时添加CREATE_NO_WINDOW标志以避免控制台窗口闪烁
             if sys.platform == "win32" and self.adb_path.endswith('.exe'):
                 # Windows平台且是exe文件，添加CREATE_NO_WINDOW标志
@@ -140,8 +137,8 @@ class DeviceManager:
             self.logger.error(f"ADB命令执行超时: {self.adb_path} {' '.join(full_args)}")
             return False, "命令执行超时"
         except Exception as e:
-            self.logger.error(f"执行ADB命令时出错: {str(e)}")
-            return False, f"执行命令时出错: {str(e)}"
+            self.logger.error(f"执行ADB命令时发生未知错误: {str(e)}")
+            return False, f"执行命令时发生错误: {str(e)}"
         
     def get_devices(self) -> List[str]:
         """获取连接的设备列表

@@ -9,7 +9,7 @@ from .sms_tab import SMSTab
 from .photos_tab import PhotosTab
 from .device_diagnostic_tab import DeviceDiagnosticTab
 import logging
-
+import os
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -120,6 +120,40 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.Yes:
-            event.accept()
+            # 清理临时文件
+            self.cleanup_temp_files()
+            # 确保完全退出应用
+            import sys
+            sys.exit(0)
         else:
             event.ignore()
+
+    def cleanup_temp_files(self):
+        """清理临时文件"""
+        try:
+            # 清理照片标签页的缩略图目录
+            if hasattr(self, 'photos_tab') and self.photos_tab:
+                import shutil
+                # 清理照片标签页的缩略图目录
+                if os.path.exists(self.photos_tab.thumb_dir):
+                    shutil.rmtree(self.photos_tab.thumb_dir)
+                    self.photos_tab.logger.info(f"已删除缩略图目录: {self.photos_tab.thumb_dir}")
+
+                # 清理照片读取器的缩略图目录
+                if hasattr(self.photos_tab, 'photos_reader') and self.photos_tab.photos_reader:
+                    photo_reader = self.photos_tab.photos_reader
+                    if hasattr(photo_reader, 'thumbnail_dir') and os.path.exists(photo_reader.thumbnail_dir):
+                        shutil.rmtree(photo_reader.thumbnail_dir)
+                        photo_reader.logger.info(f"已删除照片读取器缩略图目录: {photo_reader.thumbnail_dir}")
+
+            # 清理可能存在的其他临时目录
+            temp_dirs = ['thumbnails', 'temp', '.cache']
+            for temp_dir in temp_dirs:
+                abs_temp_dir = os.path.abspath(temp_dir)
+                if os.path.exists(abs_temp_dir) and abs_temp_dir not in ['.', '..']:
+                    import shutil
+                    shutil.rmtree(abs_temp_dir)
+                    logging.info(f"已删除临时目录: {abs_temp_dir}")
+
+        except Exception as e:
+            logging.error(f"清理临时文件时出错: {str(e)}")
