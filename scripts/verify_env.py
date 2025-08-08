@@ -49,7 +49,15 @@ def check_dependencies() -> Dict[str, bool]:
 def check_adb() -> bool:
     """检查ADB工具"""
     try:
-        subprocess.run(['adb', 'version'], capture_output=True, check=True, timeout=10)
+        # 在Windows上运行adb.exe时添加CREATE_NO_WINDOW标志以避免控制台窗口闪烁
+        if sys.platform == "win32":
+            # Windows平台，添加CREATE_NO_WINDOW标志
+            creation_flags = subprocess.CREATE_NO_WINDOW
+        else:
+            creation_flags = 0
+            
+        subprocess.run(['adb', 'version'], capture_output=True, check=True, timeout=10,
+                      creationflags=creation_flags)
         return True
     except (subprocess.SubprocessError, FileNotFoundError, subprocess.TimeoutExpired):
         return False

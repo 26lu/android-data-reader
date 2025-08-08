@@ -44,8 +44,16 @@ class DeviceManager:
         
         # 首先尝试使用系统ADB
         try:
+            # 在Windows上运行adb.exe时添加CREATE_NO_WINDOW标志以避免控制台窗口闪烁
+            if sys.platform == "win32":
+                # Windows平台，添加CREATE_NO_WINDOW标志
+                creation_flags = subprocess.CREATE_NO_WINDOW
+            else:
+                creation_flags = 0
+                
             result = subprocess.run(['adb', 'version'], 
-                                  capture_output=True, text=True, timeout=5)
+                                  capture_output=True, text=True, timeout=5,
+                                  creationflags=creation_flags)
             if result.returncode == 0:
                 self.logger.info("使用系统ADB")
                 return 'adb'
@@ -57,15 +65,31 @@ class DeviceManager:
             pass
         
         # 尝试使用项目自带的ADB
-        platform_dir = 'platform-tools'
-        if sys.platform == 'win32':
-            adb_executable = os.path.join(platform_dir, 'adb.exe')
-        else:
-            adb_executable = os.path.join(platform_dir, 'adb')
+        # 处理打包后的可执行文件路径
+        if getattr(sys, 'frozen', False):
+            # 如果是打包后的exe文件运行
+            base_path = sys._MEIPASS
+            platform_dir = os.path.join(base_path, 'platform-tools')
             
-        if os.path.exists(adb_executable):
-            self.logger.info(f"使用项目自带ADB: {adb_executable}")
-            return adb_executable
+            if sys.platform == 'win32':
+                adb_executable = os.path.join(platform_dir, 'adb.exe')
+            else:
+                adb_executable = os.path.join(platform_dir, 'adb')
+                
+            if os.path.exists(adb_executable):
+                self.logger.info(f"使用项目自带ADB: {adb_executable}")
+                return adb_executable
+        elif os.path.exists('platform-tools'):
+            # 如果是直接运行Python脚本
+            platform_dir = 'platform-tools'
+            if sys.platform == 'win32':
+                adb_executable = os.path.join(platform_dir, 'adb.exe')
+            else:
+                adb_executable = os.path.join(platform_dir, 'adb')
+                
+            if os.path.exists(adb_executable):
+                self.logger.info(f"使用项目自带ADB: {adb_executable}")
+                return adb_executable
             
         self.logger.error("未找到可用的ADB")
         raise FileNotFoundError("未找到可用的ADB可执行文件")
@@ -85,12 +109,20 @@ class DeviceManager:
         full_args = ['-s', device_id] + args
         self.logger.debug(f"执行ADB命令: {self.adb_path} {' '.join(full_args)}")
         try:
+            # 在Windows上运行adb.exe时添加CREATE_NO_WINDOW标志以避免控制台窗口闪烁
+            if sys.platform == "win32" and self.adb_path.endswith('.exe'):
+                # Windows平台且是exe文件，添加CREATE_NO_WINDOW标志
+                creation_flags = subprocess.CREATE_NO_WINDOW
+            else:
+                creation_flags = 0
+                
             result = subprocess.run(
                 [self.adb_path] + full_args,
                 capture_output=True, 
                 text=True, 
                 timeout=timeout,
-                encoding='utf-8'
+                encoding='utf-8',
+                creationflags=creation_flags  # 添加此参数以避免控制台窗口闪烁
             )
             
             self.logger.debug(f"ADB命令返回码: {result.returncode}")
@@ -119,9 +151,17 @@ class DeviceManager:
         """
         self.logger.info("获取设备列表")
         try:
+            # 在Windows上运行adb.exe时添加CREATE_NO_WINDOW标志以避免控制台窗口闪烁
+            if sys.platform == "win32" and self.adb_path.endswith('.exe'):
+                # Windows平台且是exe文件，添加CREATE_NO_WINDOW标志
+                creation_flags = subprocess.CREATE_NO_WINDOW
+            else:
+                creation_flags = 0
+                
             self.logger.debug(f"执行命令: {self.adb_path} devices")
             result = subprocess.run([self.adb_path, 'devices'], 
-                                  capture_output=True, text=True, timeout=10)
+                                  capture_output=True, text=True, timeout=10,
+                                  creationflags=creation_flags)
             
             if result.returncode != 0:
                 self.logger.error(f"获取设备列表失败: {result.stderr}")
@@ -155,16 +195,6 @@ class DeviceManager:
                 self.logger.info("- 安装手机品牌的官方USB驱动程序")
             
             return devices
-            
-        except subprocess.TimeoutExpired:
-            self.logger.error("获取设备列表超时")
-            return []
-        except FileNotFoundError:
-            self.logger.error(f"ADB可执行文件未找到: {self.adb_path}")
-            return []
-        except subprocess.SubprocessError as e:
-            self.logger.error(f"执行ADB命令时出错: {str(e)}")
-            return []
         except Exception as e:
             self.logger.error(f"获取设备列表时出错: {str(e)}")
             return []
@@ -182,7 +212,7 @@ class DeviceManager:
         return []
     
     def get_device_info(self, device_id: str) -> Dict[str, str]:
-        """获取设备信息
+        """获取设备详细信息
         
         Args:
             device_id: 设备ID
@@ -194,10 +224,18 @@ class DeviceManager:
         info = {}
         
         try:
+            # 在Windows上运行adb.exe时添加CREATE_NO_WINDOW标志以避免控制台窗口闪烁
+            if sys.platform == "win32" and self.adb_path.endswith('.exe'):
+                # Windows平台且是exe文件，添加CREATE_NO_WINDOW标志
+                creation_flags = subprocess.CREATE_NO_WINDOW
+            else:
+                creation_flags = 0
+                
             # 获取设备型号
             self.logger.debug(f"获取设备型号: {device_id}")
             model_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'getprop', 'ro.product.model'],
-                                        capture_output=True, text=True, timeout=10)
+                                        capture_output=True, text=True, timeout=10,
+                                        creationflags=creation_flags)
             if model_result.returncode == 0:
                 info['model'] = model_result.stdout.strip()
             else:
@@ -206,7 +244,8 @@ class DeviceManager:
             # 获取Android版本
             self.logger.debug(f"获取Android版本: {device_id}")
             version_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'getprop', 'ro.build.version.release'],
-                                          capture_output=True, text=True, timeout=10)
+                                          capture_output=True, text=True, timeout=10,
+                                          creationflags=creation_flags)
             if version_result.returncode == 0:
                 info['android_version'] = version_result.stdout.strip()
             else:
@@ -215,30 +254,20 @@ class DeviceManager:
             # 获取制造商
             self.logger.debug(f"获取制造商: {device_id}")
             manufacturer_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'getprop', 'ro.product.manufacturer'],
-                                               capture_output=True, text=True, timeout=10)
+                                               capture_output=True, text=True, timeout=10,
+                                               creationflags=creation_flags)
             if manufacturer_result.returncode == 0:
                 info['manufacturer'] = manufacturer_result.stdout.strip()
             else:
                 self.logger.warning(f"获取制造商失败: {manufacturer_result.stderr}")
                 
-            self.logger.debug(f"设备信息获取完成: {info}")
+            return info
+        except Exception as e:
+            self.logger.error(f"获取设备信息时出错: {str(e)}")
             return info
             
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"获取设备信息超时: {device_id}")
-            return {}
-        except FileNotFoundError:
-            self.logger.error(f"ADB可执行文件未找到: {self.adb_path}")
-            return {}
-        except subprocess.SubprocessError as e:
-            self.logger.error(f"执行ADB命令时出错: {str(e)}")
-            return {}
-        except Exception as e:
-            self.logger.error(f"获取设备信息时出现未预期错误: {str(e)}")
-            return {}
-            
     def get_device_permissions(self, device_id: str) -> Dict[str, bool]:
-        """获取设备权限状态（别名方法）
+        """检查设备权限状态
         
         Args:
             device_id: 设备ID
@@ -246,7 +275,61 @@ class DeviceManager:
         Returns:
             权限状态字典
         """
-        return self.check_permissions(device_id)
+        self.logger.info(f"检查设备权限: {device_id}")
+        permissions = {}
+        
+        try:
+            # 在Windows上运行adb.exe时添加CREATE_NO_WINDOW标志以避免控制台窗口闪烁
+            if sys.platform == "win32" and self.adb_path.endswith('.exe'):
+                # Windows平台且是exe文件，添加CREATE_NO_WINDOW标志
+                creation_flags = subprocess.CREATE_NO_WINDOW
+            else:
+                creation_flags = 0
+                
+            # 检查存储权限
+            self.logger.debug(f"检查存储权限: {device_id}")
+            storage_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'ls', '/sdcard/'],
+                                          capture_output=True, text=True, timeout=10,
+                                          creationflags=creation_flags)
+            permissions['存储权限'] = storage_result.returncode == 0
+            if not permissions['存储权限']:
+                self.logger.warning(f"存储权限检查失败: {storage_result.stderr}")
+            
+            # 检查ADB权限
+            self.logger.debug(f"检查ADB调试权限: {device_id}")
+            adb_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'id'],
+                                      capture_output=True, text=True, timeout=10,
+                                      creationflags=creation_flags)
+            permissions['ADB调试权限'] = adb_result.returncode == 0
+            if not permissions['ADB调试权限']:
+                self.logger.warning(f"ADB调试权限检查失败: {adb_result.stderr}")
+                
+            # 检查联系人读取权限
+            self.logger.debug(f"检查联系人读取权限: {device_id}")
+            contacts_result = subprocess.run(
+                [self.adb_path, '-s', device_id, 'shell', 'content', 'query', '--uri', 'content://com.android.contacts/data/phones', '--limit', '1'],
+                capture_output=True, text=True, timeout=10,
+                creationflags=creation_flags
+            )
+            permissions['android.permission.READ_CONTACTS'] = contacts_result.returncode == 0
+            if not permissions['android.permission.READ_CONTACTS']:
+                self.logger.warning(f"联系人读取权限检查失败: {contacts_result.stderr}")
+            
+            # 检查短信读取权限
+            self.logger.debug(f"检查短信读取权限: {device_id}")
+            sms_result = subprocess.run(
+                [self.adb_path, '-s', device_id, 'shell', 'content', 'query', '--uri', 'content://sms', '--limit', '1'],
+                capture_output=True, text=True, timeout=10,
+                creationflags=creation_flags
+            )
+            permissions['android.permission.READ_SMS'] = sms_result.returncode == 0
+            if not permissions['android.permission.READ_SMS']:
+                self.logger.warning(f"短信读取权限检查失败: {sms_result.stderr}")
+            
+            return permissions
+        except Exception as e:
+            self.logger.error(f"检查设备权限时出错: {str(e)}")
+            return permissions
             
     def check_permissions(self, device_id: str) -> Dict[str, bool]:
         """检查设备权限状态
@@ -261,10 +344,18 @@ class DeviceManager:
         permissions = {}
         
         try:
+            # 在Windows上运行adb.exe时添加CREATE_NO_WINDOW标志以避免控制台窗口闪烁
+            if sys.platform == "win32" and self.adb_path.endswith('.exe'):
+                # Windows平台且是exe文件，添加CREATE_NO_WINDOW标志
+                creation_flags = subprocess.CREATE_NO_WINDOW
+            else:
+                creation_flags = 0
+                
             # 检查存储权限
             self.logger.debug(f"检查存储权限: {device_id}")
             storage_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'ls', '/sdcard/'],
-                                          capture_output=True, text=True, timeout=10)
+                                          capture_output=True, text=True, timeout=10,
+                                          creationflags=creation_flags)
             permissions['存储权限'] = storage_result.returncode == 0
             if not permissions['存储权限']:
                 self.logger.warning(f"存储权限检查失败: {storage_result.stderr}")
@@ -272,7 +363,8 @@ class DeviceManager:
             # 检查ADB权限
             self.logger.debug(f"检查ADB调试权限: {device_id}")
             adb_result = subprocess.run([self.adb_path, '-s', device_id, 'shell', 'id'],
-                                      capture_output=True, text=True, timeout=10)
+                                      capture_output=True, text=True, timeout=10,
+                                      creationflags=creation_flags)
             permissions['ADB调试权限'] = adb_result.returncode == 0
             if not permissions['ADB调试权限']:
                 self.logger.warning(f"ADB调试权限检查失败: {adb_result.stderr}")
@@ -281,24 +373,26 @@ class DeviceManager:
             self.logger.debug(f"检查联系人读取权限: {device_id}")
             contacts_result = subprocess.run(
                 [self.adb_path, '-s', device_id, 'shell', 'content', 'query', '--uri', 'content://com.android.contacts/data/phones', '--limit', '1'],
-                capture_output=True, text=True, timeout=10
+                capture_output=True, text=True, timeout=10,
+                creationflags=creation_flags
             )
             permissions['android.permission.READ_CONTACTS'] = contacts_result.returncode == 0
             if not permissions['android.permission.READ_CONTACTS']:
                 self.logger.warning(f"联系人读取权限检查失败: {contacts_result.stderr}")
             
-            self.logger.debug(f"权限检查完成: {permissions}")
+            # 检查短信读取权限
+            self.logger.debug(f"检查短信读取权限: {device_id}")
+            sms_result = subprocess.run(
+                [self.adb_path, '-s', device_id, 'shell', 'content', 'query', '--uri', 'content://sms', '--limit', '1'],
+                capture_output=True, text=True, timeout=10,
+                creationflags=creation_flags
+            )
+            permissions['android.permission.READ_SMS'] = sms_result.returncode == 0
+            if not permissions['android.permission.READ_SMS']:
+                self.logger.warning(f"短信读取权限检查失败: {sms_result.stderr}")
+            
+            return permissions
+        except Exception as e:
+            self.logger.error(f"检查设备权限时出错: {str(e)}")
             return permissions
             
-        except subprocess.TimeoutExpired:
-            self.logger.error(f"权限检查超时: {device_id}")
-            return {}
-        except FileNotFoundError:
-            self.logger.error(f"ADB可执行文件未找到: {self.adb_path}")
-            return {}
-        except subprocess.SubprocessError as e:
-            self.logger.error(f"执行ADB命令时出错: {str(e)}")
-            return {}
-        except Exception as e:
-            self.logger.error(f"权限检查时出现未预期错误: {str(e)}")
-            return {}

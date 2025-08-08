@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['D:\\vscode\\code\\python\\android-data-reader\\src\\main.py'],
+    ['d:\\vscode\\code\\python\\android-data-reader\\src\\main.py'],
     pathex=[],
     binaries=[],
     datas=[('platform-tools', 'platform-tools')],

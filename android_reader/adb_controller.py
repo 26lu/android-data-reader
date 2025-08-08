@@ -2,6 +2,7 @@ import subprocess
 from typing import List, Optional, Tuple
 import logging
 import os
+import sys
 
 class ADBController:
     def __init__(self, adb_path: Optional[str] = None):
@@ -34,10 +35,18 @@ class ADBController:
             full_command = [self.adb_path] + command
             self.logger.debug(f"Executing command: {' '.join(full_command)}")
             
+            # 在Windows上运行adb.exe时添加CREATE_NO_WINDOW标志以避免控制台窗口闪烁
+            if sys.platform == "win32" and self.adb_path.endswith('.exe'):
+                # Windows平台且是exe文件，添加CREATE_NO_WINDOW标志
+                creation_flags = subprocess.CREATE_NO_WINDOW
+            else:
+                creation_flags = 0
+            
             result = subprocess.run(
                 full_command,
                 capture_output=True,
-                text=True
+                text=True,
+                creationflags=creation_flags  # 添加此参数以避免控制台窗口闪烁
             )
             
             if result.returncode == 0:

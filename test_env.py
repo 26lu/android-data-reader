@@ -27,7 +27,15 @@ def test_environment():
     # 测试ADB
     import subprocess
     try:
-        result = subprocess.run(['adb', 'version'], capture_output=True, text=True, timeout=10)
+        # 在Windows上运行adb.exe时添加CREATE_NO_WINDOW标志以避免控制台窗口闪烁
+        if sys.platform == "win32":
+            # Windows平台，添加CREATE_NO_WINDOW标志
+            creation_flags = subprocess.CREATE_NO_WINDOW
+        else:
+            creation_flags = 0
+            
+        result = subprocess.run(['adb', 'version'], capture_output=True, text=True, timeout=10,
+                               creationflags=creation_flags)
         if result.returncode == 0:
             print("ADB工具测试成功")
             print(result.stdout.strip())
