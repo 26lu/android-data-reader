@@ -142,20 +142,20 @@ class PhotosTab(QWidget):
                 border-radius: 4px;
                 font-weight: bold;
             }
-            
+
             QPushButton:hover {
                 background-color: #45b36d;
             }
-            
+
             QPushButton:pressed {
                 background-color: #3da562;
             }
-            
+
             QPushButton:disabled {
                 background-color: #b3b3b3;
             }
         """)
-        
+
         # 添加刷新间隔设置（类似联系人标签页）
         self.refresh_interval_input = QLineEdit()
         self.refresh_interval_input.setPlaceholderText('自动刷新间隔（秒），0为关闭')
@@ -169,7 +169,7 @@ class PhotosTab(QWidget):
                 background-color: white;
             }
         """)
-        
+
         self.set_refresh_interval_button = QPushButton('设置自动刷新')
         self.set_refresh_interval_button.clicked.connect(self.set_refresh_interval)
         self.set_refresh_interval_button.setStyleSheet("""
@@ -181,16 +181,16 @@ class PhotosTab(QWidget):
                 border-radius: 4px;
                 font-weight: bold;
             }
-            
+
             QPushButton:hover {
                 background-color: #8467c9;
             }
-            
+
             QPushButton:pressed {
                 background-color: #755cb7;
             }
         """)
-        
+
         self.export_button = QPushButton('导出选中')
         self.export_button.clicked.connect(self.export_selected_photos)
         self.export_button.setStyleSheet("""
@@ -202,11 +202,11 @@ class PhotosTab(QWidget):
                 border-radius: 4px;
                 font-weight: bold;
             }
-            
+
             QPushButton:hover {
                 background-color: #e69500;
             }
-            
+
             QPushButton:pressed {
                 background-color: #cc8400;
             }
@@ -226,7 +226,7 @@ class PhotosTab(QWidget):
                 text-align: center;
                 background-color: #f0f0f0;
             }
-            
+
             QProgressBar::chunk {
                 background-color: #4a90e2;
                 border-radius: 3px;
@@ -243,17 +243,17 @@ class PhotosTab(QWidget):
                 border: 1px solid #cccccc;
                 border-radius: 4px;
                 background-color: white;
-                padding: 5px;
+                padding: 0px;
             }
-            
+
             QListWidget::item {
                 border: 1px solid #d0d0d0;
                 border-radius: 6px;
-                padding: 5px;
-                margin: 4px;
+                padding: 0px;
+                margin: 0px;
                 background-color: #fafafa;
             }
-            
+
             QListWidget::item:selected {
                 border: 2px solid #4a90e2;
                 background-color: #e8f0fe;
