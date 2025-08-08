@@ -76,9 +76,33 @@ class ContactsTab(QWidget):
 
         # 通过样式表设置选中行背景色和字体颜色
         self.contacts_table.setStyleSheet("""
+        QTableWidget {
+            border: 1px solid #cccccc;
+            border-radius: 4px;
+            gridline-color: #e0e0e0;
+            background-color: white;
+        }
+        
+        QTableWidget::item {
+            padding: 4px;
+        }
+        
         QTableWidget::item:selected {
-            background-color: #a0c8f0;  /* 选中行背景色，蓝色系，可根据需求调整 */
-            color: black;               /* 选中行字体颜色 */
+            background-color: #a0c8f0;
+            color: black;
+        }
+        
+        QHeaderView::section {
+            background-color: #e8f0fe;
+            padding: 8px;
+            border: 1px solid #cccccc;
+            font-weight: bold;
+            color: #333333;
+        }
+        
+        QTableCornerButton::section {
+            background-color: #e8f0fe;
+            border: 1px solid #cccccc;
         }
         """)
 

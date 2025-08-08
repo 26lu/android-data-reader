@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QTextEdit, QGroupBox, QProgressBar,
-                             QListWidget, QListWidgetItem, QMessageBox)
+                             QListWidget, QListWidgetItem, QMessageBox, QSpacerItem, QSizePolicy)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor
 from ..core.device_manager import DeviceManager
@@ -17,6 +17,8 @@ class DeviceDiagnosticTab(QWidget):
     def init_ui(self):
         """初始化用户界面"""
         layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
         
         # 标题
         title_label = QLabel('设备连接诊断')
@@ -25,101 +27,215 @@ class DeviceDiagnosticTab(QWidget):
         title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("""
+            QLabel {
+                color: #333333;
+                padding: 10px;
+                background-color: #f0f8ff;
+                border-radius: 8px;
+                margin-bottom: 10px;
+            }
+        """)
         layout.addWidget(title_label)
         
         # 诊断控制区域
         control_layout = QHBoxLayout()
         self.check_button = QPushButton('立即诊断')
         self.check_button.clicked.connect(self.check_device_status)
+        self.check_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4a90e2;
+                border: none;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 14px;
+                min-width: 120px;
+            }
+            
+            QPushButton:hover {
+                background-color: #357ae8;
+            }
+            
+            QPushButton:pressed {
+                background-color: #2d66c3;
+            }
+        """)
         control_layout.addWidget(self.check_button)
         
         self.auto_check_label = QLabel('自动诊断: 每5秒')
+        self.auto_check_label.setStyleSheet("""
+            QLabel {
+                color: #666666;
+                font-size: 14px;
+                padding: 10px;
+            }
+        """)
         control_layout.addWidget(self.auto_check_label)
         control_layout.addStretch()
         
         layout.addLayout(control_layout)
         
-        # 诊断进度条
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 0)  # Indeterminate progress
-        self.progress_bar.setVisible(False)
-        layout.addWidget(self.progress_bar)
+        # 设备状态显示区域
+        status_group = QGroupBox("设备状态")
+        status_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #cccccc;
+                border-radius: 6px;
+                margin-top: 10px;
+                padding-top: 15px;
+            }
+            
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 10px;
+                padding: 0 5px;
+                color: #333333;
+            }
+        """)
+        status_layout = QVBoxLayout(status_group)
+        
+        self.status_label = QLabel("正在检查设备状态...")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setStyleSheet("""
+            QLabel {
+                color: #666666;
+                font-size: 14px;
+                padding: 20px;
+                background-color: #f8f8f8;
+                border-radius: 6px;
+            }
+        """)
+        status_layout.addWidget(self.status_label)
+        
+        # 连接状态指示器
+        self.connection_indicator = QLabel()
+        self.connection_indicator.setFixedSize(20, 20)
+        self.connection_indicator.setStyleSheet("""
+            QLabel {
+                background-color: #cccccc;
+                border-radius: 10px;
+            }
+        """)
+        indicator_layout = QHBoxLayout()
+        indicator_layout.addWidget(QLabel("连接状态:"))
+        indicator_layout.addWidget(self.connection_indicator)
+        indicator_layout.addStretch()
+        status_layout.addLayout(indicator_layout)
+        
+        layout.addWidget(status_group)
         
         # 诊断结果区域
-        self.result_group = QGroupBox('诊断结果')
-        result_layout = QVBoxLayout(self.result_group)
+        results_group = QGroupBox("诊断结果")
+        results_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #cccccc;
+                border-radius: 6px;
+                margin-top: 10px;
+                padding-top: 15px;
+            }
+            
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 10px;
+                padding: 0 5px;
+                color: #333333;
+            }
+        """)
+        results_layout = QVBoxLayout(results_group)
         
-        self.result_list = QListWidget()
-        result_layout.addWidget(self.result_list)
+        self.results_text = QTextEdit()
+        self.results_text.setReadOnly(True)
+        self.results_text.setStyleSheet("""
+            QTextEdit {
+                border: 1px solid #cccccc;
+                border-radius: 6px;
+                background-color: #ffffff;
+                padding: 10px;
+                font-family: Consolas, monospace;
+            }
+        """)
+        results_layout.addWidget(self.results_text)
         
-        layout.addWidget(self.result_group)
+        layout.addWidget(results_group)
         
-        # 操作建议区域
-        self.suggestion_group = QGroupBox('操作建议')
-        suggestion_layout = QVBoxLayout(self.suggestion_group)
+        # 进度条
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #cccccc;
+                border-radius: 4px;
+                text-align: center;
+                background-color: #f0f0f0;
+                height: 20px;
+            }
+            
+            QProgressBar::chunk {
+                background-color: #4a90e2;
+                border-radius: 3px;
+            }
+        """)
+        self.progress_bar.hide()
+        layout.addWidget(self.progress_bar)
         
-        self.suggestion_text = QTextEdit()
-        self.suggestion_text.setReadOnly(True)
-        suggestion_layout.addWidget(self.suggestion_text)
-        
-        layout.addWidget(self.suggestion_group)
-        
-        # 初始诊断
-        self.check_device_status()
+        # 添加弹性空间以保持布局美观
+        layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
         
     def check_device_status(self):
         """检查设备状态"""
-        self.progress_bar.setVisible(True)
-        self.result_list.clear()
-        
         try:
-            # 检查ADB设备
-            devices = self.device_manager.get_devices()
-            self.add_result_item(f"ADB设备检测: 找到 {len(devices)} 个设备", 
-                               "success" if devices else "warning")
+            self.progress_bar.show()
+            self.progress_bar.setRange(0, 0)  # 设置为忙碌状态
+            self.status_label.setText("正在检查设备状态...")
             
-            if devices:
+            # 获取设备列表
+            devices = self.device_manager.get_devices()
+            
+            if not devices:
+                self.status_label.setText("未检测到设备")
+                self.connection_indicator.setStyleSheet("background-color: #ff6b6b; border-radius: 10px;")
+                self.results_text.setPlainText("❌ 未检测到任何Android设备\n\n请检查：\n1. USB线缆连接是否正常\n2. 设备是否开启USB调试\n3. 是否正确安装了设备驱动")
+            else:
                 device_id = devices[0]
-                self.add_result_item(f"设备ID: {device_id}", "info")
+                self.status_label.setText(f"设备已连接: {device_id}")
+                self.connection_indicator.setStyleSheet("background-color: #50c878; border-radius: 10px;")
                 
-                # 检查设备信息
+                # 获取设备信息
                 device_info = self.device_manager.get_device_info(device_id)
-                if device_info:
-                    model = device_info.get('model', '未知')
-                    android_version = device_info.get('android_version', '未知')
-                    manufacturer = device_info.get('manufacturer', '未知')
-                    self.add_result_item(f"设备型号: {model}", "info")
-                    self.add_result_item(f"Android版本: {android_version}", "info")
-                    self.add_result_item(f"制造商: {manufacturer}", "info")
                 
                 # 检查权限
-                permissions = self.device_manager.check_permissions(device_id)
-                storage_perm = permissions.get('存储权限', False)
-                adb_perm = permissions.get('ADB调试权限', False)
-                contacts_perm = permissions.get('android.permission.READ_CONTACTS', False)
+                permissions = self.device_manager.get_device_permissions(device_id)
                 
-                self.add_result_item(f"存储权限: {'已授予' if storage_perm else '未授予'}", 
-                                   "success" if storage_perm else "error")
-                self.add_result_item(f"ADB调试权限: {'已授予' if adb_perm else '未授予'}", 
-                                   "success" if adb_perm else "error")
-                self.add_result_item(f"联系人读取权限: {'已授予' if contacts_perm else '未授予'}", 
-                                   "success" if contacts_perm else "error")
+                result_text = f"✅ 检测到设备: {device_id}\n\n"
+                result_text += "📱 设备信息:\n"
+                for key, value in device_info.items():
+                    result_text += f"  {key}: {value}\n"
                 
-                # 提供针对性建议
-                self.update_suggestions(devices, permissions)
-            else:
-                # 没有检测到设备，提供连接指导
-                self.update_suggestions(devices, {})
-                
-        except Exception as e:
-            self.add_result_item(f"诊断过程中出错: {str(e)}", "error")
-            self.update_suggestions([], {})
+                result_text += "\n🔒 权限状态:\n"
+                for perm, granted in permissions.items():
+                    status = "✅ 已授权" if granted else "❌ 未授权"
+                    result_text += f"  {perm}: {status}\n"
+                    
+                self.results_text.setPlainText(result_text)
             
-        self.progress_bar.setVisible(False)
+            self.progress_bar.hide()
+            
+        except Exception as e:
+            self.status_label.setText("检查设备时出错")
+            self.connection_indicator.setStyleSheet("background-color: #ff6b6b; border-radius: 10px;")
+            self.results_text.setPlainText(f"❌ 检查设备时发生错误:\n{str(e)}")
+            self.progress_bar.hide()
         
     def auto_check_device(self):
         """自动检查设备状态"""
-        self.check_device_status()
+        # 只在没有正在进行的手动检查时才自动检查
+        if not self.progress_bar.isVisible():
+            self.check_device_status()
         
     def add_result_item(self, text, status):
         """添加诊断结果项"""

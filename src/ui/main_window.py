@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (QMainWindow, QTabWidget, QWidget,
                              QMessageBox, QStatusBar, QHBoxLayout)
 import logging
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont, QPalette, QColor
 from ..core.device_manager import DeviceManager
 from .contacts_tab import ContactsTab
 from .sms_tab import SMSTab
@@ -10,6 +11,7 @@ from .photos_tab import PhotosTab
 from .device_diagnostic_tab import DeviceDiagnosticTab
 import logging
 import os
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -21,6 +23,64 @@ class MainWindow(QMainWindow):
         """初始化用户界面"""
         self.setWindowTitle('Android数据读取器')
         self.setGeometry(100, 100, 1000, 700)
+
+        # 设置应用程序整体样式
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #f0f0f0;
+            }
+            
+            QPushButton {
+                background-color: #4a90e2;
+                border: none;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            
+            QPushButton:hover {
+                background-color: #357ae8;
+            }
+            
+            QPushButton:pressed {
+                background-color: #2d66c3;
+            }
+            
+            QPushButton:disabled {
+                background-color: #b3b3b3;
+            }
+            
+            QLabel {
+                color: #333333;
+                font-size: 14px;
+            }
+            
+            QTabWidget::pane {
+                border: 1px solid #cccccc;
+                border-top: none;
+                background-color: white;
+            }
+            
+            QTabBar::tab {
+                background-color: #e0e0e0;
+                border: 1px solid #cccccc;
+                border-bottom: none;
+                padding: 8px 16px;
+                margin-right: 2px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            
+            QTabBar::tab:selected {
+                background-color: white;
+                font-weight: bold;
+            }
+            
+            QTabBar::tab:hover:!selected {
+                background-color: #f0f0f0;
+            }
+        """)
 
         # 创建中心部件
         central_widget = QWidget()

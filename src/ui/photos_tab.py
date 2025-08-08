@@ -1,10 +1,10 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QListWidget, QListWidgetItem,
     QHBoxLayout, QLineEdit, QFileDialog, QMessageBox, QLabel,
-    QProgressBar, QSizePolicy, QSplitter
+    QProgressBar, QSizePolicy, QSplitter, QSpinBox
 )
-from PyQt5.QtCore import Qt, QSize, QRunnable, QThreadPool, pyqtSignal, QObject
-from PyQt5.QtGui import QPixmap, QIcon, QFontMetrics
+from PyQt5.QtCore import Qt, QSize, QRunnable, QThreadPool, pyqtSignal, QObject, QTimer
+from PyQt5.QtGui import QPixmap, QIcon, QFontMetrics, QColor
 import os
 import logging
 from datetime import datetime
@@ -111,30 +111,106 @@ class PhotosTab(QWidget):
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(10, 10, 10, 10)
 
         # 搜索和按钮区域
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText('搜索照片...')
         self.search_input.textChanged.connect(self.filter_photos)
+        self.search_input.setStyleSheet("""
+            QLineEdit {
+                padding: 8px;
+                border: 1px solid #cccccc;
+                border-radius: 4px;
+                background-color: white;
+            }
+        """)
         search_layout.addWidget(self.search_input)
 
         button_layout = QHBoxLayout()
         self.refresh_button = QPushButton('刷新')
         self.refresh_button.clicked.connect(self.load_photos)
         self.refresh_button.setEnabled(True)
+        self.refresh_button.setStyleSheet("""
+            QPushButton {
+                background-color: #50c878;
+                border: none;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            
+            QPushButton:hover {
+                background-color: #45b36d;
+            }
+            
+            QPushButton:pressed {
+                background-color: #3da562;
+            }
+            
+            QPushButton:disabled {
+                background-color: #b3b3b3;
+            }
+        """)
         
         # 添加刷新间隔设置（类似联系人标签页）
         self.refresh_interval_input = QLineEdit()
         self.refresh_interval_input.setPlaceholderText('自动刷新间隔（秒），0为关闭')
         self.refresh_interval_input.setFixedWidth(150)
         self.refresh_interval_input.setText("30")  # 默认30秒
+        self.refresh_interval_input.setStyleSheet("""
+            QLineEdit {
+                padding: 8px;
+                border: 1px solid #cccccc;
+                border-radius: 4px;
+                background-color: white;
+            }
+        """)
         
         self.set_refresh_interval_button = QPushButton('设置自动刷新')
         self.set_refresh_interval_button.clicked.connect(self.set_refresh_interval)
+        self.set_refresh_interval_button.setStyleSheet("""
+            QPushButton {
+                background-color: #9370db;
+                border: none;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            
+            QPushButton:hover {
+                background-color: #8467c9;
+            }
+            
+            QPushButton:pressed {
+                background-color: #755cb7;
+            }
+        """)
         
         self.export_button = QPushButton('导出选中')
         self.export_button.clicked.connect(self.export_selected_photos)
+        self.export_button.setStyleSheet("""
+            QPushButton {
+                background-color: #ffa500;
+                border: none;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            
+            QPushButton:hover {
+                background-color: #e69500;
+            }
+            
+            QPushButton:pressed {
+                background-color: #cc8400;
+            }
+        """)
         button_layout.addWidget(self.refresh_button)
         button_layout.addWidget(self.refresh_interval_input)
         button_layout.addWidget(self.set_refresh_interval_button)
@@ -143,6 +219,19 @@ class PhotosTab(QWidget):
         # 进度条
         self.progress_bar = QProgressBar()
         self.progress_bar.hide()
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #cccccc;
+                border-radius: 4px;
+                text-align: center;
+                background-color: #f0f0f0;
+            }
+            
+            QProgressBar::chunk {
+                background-color: #4a90e2;
+                border-radius: 3px;
+            }
+        """)
 
         # 照片列表 - 改为列表模式，使用自定义控件
         self.photo_list = QListWidget()
@@ -150,16 +239,24 @@ class PhotosTab(QWidget):
         self.photo_list.setSelectionMode(QListWidget.MultiSelection)
         self.photo_list.setSpacing(5)
         self.photo_list.setStyleSheet("""
-            QListWidget::item {
+            QListWidget {
                 border: 1px solid #cccccc;
+                border-radius: 4px;
+                background-color: white;
+                padding: 5px;
+            }
+            
+            QListWidget::item {
+                border: 1px solid #d0d0d0;
                 border-radius: 6px;
                 padding: 5px;
                 margin: 4px;
                 background-color: #fafafa;
             }
+            
             QListWidget::item:selected {
-                border: 2px solid #3399ff;
-                background-color: #d6eaff;
+                border: 2px solid #4a90e2;
+                background-color: #e8f0fe;
             }
         """)
         self.photo_list.itemClicked.connect(self.on_photo_selected)
@@ -172,9 +269,25 @@ class PhotosTab(QWidget):
         self.photo_preview.setMinimumSize(400, 400)
         self.photo_preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.photo_preview.setText("请选择左侧照片查看预览")
+        self.photo_preview.setStyleSheet("""
+            QLabel {
+                border: 1px solid #cccccc;
+                border-radius: 4px;
+                background-color: #f8f8f8;
+                padding: 10px;
+                color: #666666;
+            }
+        """)
 
         # 状态标签
         self.status_label = QLabel()
+        self.status_label.setStyleSheet("""
+            QLabel {
+                color: #666666;
+                font-style: italic;
+                padding: 5px;
+            }
+        """)
 
         # 左右分栏
         splitter = QSplitter(Qt.Horizontal)
